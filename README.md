@@ -1,3 +1,3 @@
 # application_tracker
 
-A new Flutter project.
+A simple application tracker built in Flutter
