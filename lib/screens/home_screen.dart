@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../services/preferences_service.dart';
 import '../models/application.dart';
+import '../services/notification_service.dart';
 
 class HomeScreen extends StatefulWidget {
   @override
@@ -15,7 +17,8 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    _loadData();
+    _checkDailyReset();
+    _loadData().then((_) => _scheduleReminderIfNeeded());
   }
 
   Future<void> _loadData() async {
@@ -25,15 +28,77 @@ class _HomeScreenState extends State<HomeScreen> {
     setState(() {});
   }
 
+  Future<void> _handleNewApplication({Application? app}) async {
+    setState(() {
+      count++;
+    });
+
+    // Save total count
+    await PreferencesService.saveCount(count);
+
+    // Save detailed application if present
+    if (app != null) {
+      applications.add(app);
+      await PreferencesService.saveApplications(applications);
+    }
+
+    await PreferencesService.updateTodayStat();
+
+    // Reduce dailyRemaining
+    int remaining = await PreferencesService.getDailyRemaining();
+    remaining = (remaining > 0) ? remaining - 1 : 0;
+    await PreferencesService.saveDailyRemaining(remaining);
+
+    // Show Congrats dialog if target met
+    if (remaining == 0) {
+      final alreadyShown = await PreferencesService.getTargetReachedToday();
+      if (!alreadyShown) {
+        await PreferencesService.setTargetReachedToday(true);
+        showDialog(
+          context: context,
+          builder: (_) => AlertDialog(
+            title: Text("🎉 Target Achieved!"),
+            content: Text("You’ve reached your daily application goal!"),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: Text("Nice!"),
+              ),
+            ],
+          ),
+        );
+      }
+    }
+  }
+
   Future<void> _addCount({Application? app}) async {
     setState(() {
       count++;
     });
+
     if (app != null) {
       applications.add(app);
       await PreferencesService.saveApplications(applications);
     }
     await PreferencesService.saveCount(count);
+
+    int remaining = await PreferencesService.getDailyRemaining();
+    remaining = (remaining > 0) ? remaining - 1 : 0;
+    await PreferencesService.saveDailyRemaining(remaining);
+
+    if (remaining == 0) {
+      showDialog(
+        context: context,
+        builder: (_) => AlertDialog(
+          title: Text("🎉 Target Achieved!"),
+          content: Text("You’ve reached your daily application goal!"),
+          actions: [
+            TextButton(
+                onPressed: () => Navigator.pop(context), child: Text("OK"))
+          ],
+        ),
+      );
+    }
   }
 
   void _resetData() async {
@@ -54,6 +119,32 @@ class _HomeScreenState extends State<HomeScreen> {
     }
   }
 
+  void _scheduleReminderIfNeeded() async {
+    final now = DateTime.now();
+    final remaining = await PreferencesService.getDailyRemaining();
+
+    if (remaining > 0 && now.hour >= 20) {
+      await showTargetReminderNotification(remaining);
+    }
+  }
+
+  void _checkDailyReset() async {
+    final today = DateFormat('yyyy-MM-dd').format(DateTime.now());
+    final lastReset = await PreferencesService.getLastResetDate();
+
+    if (lastReset != today) {
+      final yesterday = DateTime.now().subtract(Duration(days: 1));
+      final yDate = DateFormat('yyyy-MM-dd').format(yesterday);
+      final prevCount = await PreferencesService.getDailyRemaining();
+      final dailyTarget = await PreferencesService.getDailyTarget();
+
+      await PreferencesService.addDailyStat(yDate, dailyTarget - prevCount);
+
+      await PreferencesService.saveDailyRemaining(dailyTarget);
+      await PreferencesService.saveLastResetDate(today);
+    }
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -65,12 +156,14 @@ class _HomeScreenState extends State<HomeScreen> {
               if (value == 'reset') _resetData();
               if (value == 'view') Navigator.pushNamed(context, '/list');
               if (value == 'reduce') _reduceCount();
+              if (value == 'stats') Navigator.pushNamed(context, '/stats');
             },
             itemBuilder: (context) => [
               PopupMenuItem(
                   value: 'view', child: Text('View Detailed Applications')),
               PopupMenuItem(value: 'reduce', child: Text('Reduce Count')),
               PopupMenuItem(value: 'reset', child: Text('Reset All')),
+              PopupMenuItem(value: 'stats', child: Text('View Daily Stats')),
             ],
           ),
         ],
@@ -90,10 +183,7 @@ class _HomeScreenState extends State<HomeScreen> {
             // BIG Circular Quick Add Button
             GestureDetector(
               onTap: () {
-                setState(() {
-                  count++;
-                });
-                PreferencesService.saveCount(count);
+                _handleNewApplication();
               },
               child: Container(
                 height: 80,
@@ -134,10 +224,12 @@ class _HomeScreenState extends State<HomeScreen> {
                   borderRadius: BorderRadius.circular(12),
                 ),
               ),
-              onPressed: () =>
-                  Navigator.pushNamed(context, '/form').then((value) {
-                if (value is Application) _addCount(app: value);
-              }),
+              onPressed: () async {
+                final result = await Navigator.pushNamed(context, '/form');
+                if (result is Application) {
+                  _handleNewApplication(app: result);
+                }
+              },
               child: Text("Detailed Entry", style: TextStyle(fontSize: 16)),
             ),
           ],

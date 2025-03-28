@@ -1,15 +1,10 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import '../services/preferences_service.dart';
 
 class OnboardingScreen extends StatelessWidget {
   final TextEditingController _controller = TextEditingController();
-
-  void _submitName(BuildContext context) async {
-    if (_controller.text.isNotEmpty) {
-      await PreferencesService.saveName(_controller.text);
-      Navigator.pushReplacementNamed(context, '/home');
-    }
-  }
+  final TextEditingController _targetController = TextEditingController();
 
   @override
   Widget build(BuildContext context) {
@@ -23,10 +18,28 @@ class OnboardingScreen extends StatelessWidget {
               Text("What's your name?", style: TextStyle(fontSize: 24)),
               TextField(controller: _controller),
               SizedBox(height: 20),
+              Text("Daily Application Target", style: TextStyle(fontSize: 20)),
+              TextField(
+                controller: _targetController,
+                keyboardType: TextInputType.number,
+              ),
+              SizedBox(height: 20),
               ElevatedButton(
-                onPressed: () => _submitName(context),
+                onPressed: () async {
+                  final name = _controller.text;
+                  final target = int.tryParse(_targetController.text) ?? 0;
+                  if (name.isNotEmpty && target > 0) {
+                    await PreferencesService.saveName(name);
+                    await PreferencesService.saveDailyTarget(target);
+                    await PreferencesService.saveDailyRemaining(target);
+                    await PreferencesService.saveLastResetDate(
+                      DateFormat('yyyy-MM-dd').format(DateTime.now()),
+                    );
+                    Navigator.pushReplacementNamed(context, '/home');
+                  }
+                },
                 child: Text("Continue"),
-              )
+              ),
             ],
           ),
         ),

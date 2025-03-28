@@ -1,11 +1,17 @@
+import 'package:application_tracker/services/notification_service.dart';
 import 'package:flutter/material.dart';
 import 'screens/home_screen.dart';
 import 'screens/onboarding_screen.dart';
 import 'screens/detailed_form_screen.dart';
 import 'screens/detailed_list_screen.dart';
 import 'services/preferences_service.dart';
+import 'screens/stats_screen.dart';
 
-void main() => runApp(MyApp());
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+  await initNotifications();
+  runApp(MyApp());
+}
 
 class MyApp extends StatelessWidget {
   Future<Widget> _getLandingPage() async {
@@ -21,6 +27,7 @@ class MyApp extends StatelessWidget {
         '/home': (_) => HomeScreen(),
         '/form': (_) => DetailedFormScreen(),
         '/list': (_) => DetailedListScreen(),
+        '/stats': (_) => StatsScreen(),
       },
       home: FutureBuilder(
         future: _getLandingPage(),
